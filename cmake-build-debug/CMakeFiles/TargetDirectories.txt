@@ -1,0 +1,3 @@
+/Users/bunkheangheng/CLionProjects/SMS/cmake-build-debug/CMakeFiles/SMS.dir
+/Users/bunkheangheng/CLionProjects/SMS/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/bunkheangheng/CLionProjects/SMS/cmake-build-debug/CMakeFiles/rebuild_cache.dir
