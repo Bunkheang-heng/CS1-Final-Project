@@ -2,18 +2,19 @@
 #define STUDENT_H
 
 #include <string>
+using namespace std;
 
 class Student {
 private:
-    std::string id;
-    std::string name;
+    string id;
+    string name;
 
 public:
-    Student(std::string id, std::string name);
-    void setId(std::string id);
-    std::string getId() const;
-    void setName(std::string name);
-    std::string getName() const;
+    Student(string id, string name);
+    void setId(string id);
+    string getId() const;
+    void setName(string name);
+    string getName() const;
     void displayStudent() const;
 };
 

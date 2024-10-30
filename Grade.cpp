@@ -1,6 +1,7 @@
 #include "Grade.h"
+using namespace std;
 
-Grade::Grade(const std::string &studentId, double score)
+Grade::Grade(const string &studentId, double score)
     : studentId(studentId), score(score) {
     calculateLetterGrade(); // Automatically calculate the letter grade based on score
 }
@@ -14,11 +15,11 @@ double Grade::getScore() const {
     return score;
 }
 
-std::string Grade::getLetterGrade() const {
+string Grade::getLetterGrade() const {
     return letterGrade;
 }
 
-std::string Grade::getStudentId() const {
+string Grade::getStudentId() const {
     return studentId;
 }
 
