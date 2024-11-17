@@ -17,5 +17,5 @@ public:
     string getName() const;
     void displayStudent() const;
 };
-
 #endif
+

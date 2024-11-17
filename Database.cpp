@@ -13,19 +13,32 @@ Database::Database() {
 
     // Create tables if they don’t exist
     string create_users_table = "CREATE TABLE IF NOT EXISTS Users ("
-                                     "Username TEXT PRIMARY KEY, "
-                                     "Password TEXT NOT NULL);";
+                                "Username TEXT PRIMARY KEY, "
+                                "Password TEXT NOT NULL);";
     string create_students_table = "CREATE TABLE IF NOT EXISTS Students ("
-                                        "ID TEXT PRIMARY KEY, "
-                                        "Name TEXT NOT NULL);";
+                                   "ID TEXT PRIMARY KEY, "
+                                   "Name TEXT NOT NULL);";
     string create_grades_table = "CREATE TABLE IF NOT EXISTS Grades ("
-                                      "StudentID TEXT, "
-                                      "Score REAL, "   // Changed to Score REAL
-                                      "FOREIGN KEY(StudentID) REFERENCES Students(ID));";
+                                 "StudentID TEXT, "
+                                 "CourseID TEXT, "
+                                 "Score REAL, "
+                                 "Grade TEXT, "
+                                 "FOREIGN KEY(StudentID) REFERENCES Students(ID), "
+                                 "FOREIGN KEY(CourseID) REFERENCES Courses(CourseID));";
+    string create_courses_table = "CREATE TABLE IF NOT EXISTS Courses ("
+                                  "CourseID TEXT PRIMARY KEY, "
+                                  "CourseName TEXT NOT NULL);";
+    string create_student_courses_table = "CREATE TABLE IF NOT EXISTS StudentCourses ("
+                                          "StudentID TEXT, "
+                                          "CourseID TEXT, "
+                                          "FOREIGN KEY(StudentID) REFERENCES Students(ID), "
+                                          "FOREIGN KEY(CourseID) REFERENCES Courses(CourseID));";
 
     sqlite3_exec(db, create_users_table.c_str(), nullptr, nullptr, nullptr);
     sqlite3_exec(db, create_students_table.c_str(), nullptr, nullptr, nullptr);
     sqlite3_exec(db, create_grades_table.c_str(), nullptr, nullptr, nullptr);
+    sqlite3_exec(db, create_courses_table.c_str(), nullptr, nullptr, nullptr);
+    sqlite3_exec(db, create_student_courses_table.c_str(), nullptr, nullptr, nullptr);
 
     // Insert default user for testing purposes
     string insert_user = "INSERT OR IGNORE INTO Users (Username, Password) VALUES ('admin', 'password');";
@@ -153,17 +166,85 @@ void Database::addStudent(const Student& student) {
 }
 
 void Database::addGrade(const Grade& grade) {
-    string sql = "INSERT INTO Grades (StudentID, Score, Grade) VALUES (?, ?, ?);";
+    if (!studentExists(grade.getStudentId())) {
+        cerr << "\033[1;31mError: Student does not exist.\033[0m" << endl;
+        return;
+    }
+    if (!courseExists(grade.getCourseId())) {
+        cerr << "\033[1;31mError: Course does not exist.\033[0m" << endl;
+        return;
+    }
+
+    // Check if student is enrolled in the course
+    string checkEnrollmentSql = "SELECT COUNT(*) FROM StudentCourses "
+                               "WHERE StudentID = ? AND CourseID = ?;";
+    sqlite3_stmt* enrollmentStmt;
+    sqlite3_prepare_v2(db, checkEnrollmentSql.c_str(), -1, &enrollmentStmt, nullptr);
+    sqlite3_bind_text(enrollmentStmt, 1, grade.getStudentId().c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(enrollmentStmt, 2, grade.getCourseId().c_str(), -1, SQLITE_STATIC);
+
+    bool isEnrolled = false;
+    if (sqlite3_step(enrollmentStmt) == SQLITE_ROW) {
+        isEnrolled = sqlite3_column_int(enrollmentStmt, 0) > 0;
+    }
+    sqlite3_finalize(enrollmentStmt);
+
+    if (!isEnrolled) {
+        cerr << "\033[1;31mError: Student is not enrolled in this course.\033[0m" << endl;
+        return;
+    }
+
+    // Check if grade already exists
+    string existingGradeSql = "SELECT Score FROM Grades "
+                          "WHERE StudentID = ? AND CourseID = ?;";
+    sqlite3_stmt* gradeCheckStmt;
+    sqlite3_prepare_v2(db, existingGradeSql.c_str(), -1, &gradeCheckStmt, nullptr);
+    sqlite3_bind_text(gradeCheckStmt, 1, grade.getStudentId().c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(gradeCheckStmt, 2, grade.getCourseId().c_str(), -1, SQLITE_STATIC);
+
+    if (sqlite3_step(gradeCheckStmt) == SQLITE_ROW) {
+        double currentScore = sqlite3_column_double(gradeCheckStmt, 0);
+        sqlite3_finalize(gradeCheckStmt);
+
+        char choice;
+        cout << "\033[1;33mA grade of " << currentScore << " already exists for this course.\033[0m" << endl;
+        cout << "\033[1;36mWould you like to update it? (Y/N): \033[0m";
+        cin >> choice;
+
+        if (toupper(choice) == 'Y') {
+            string updateSql = "UPDATE Grades SET Score = ?, Grade = ? "
+                             "WHERE StudentID = ? AND CourseID = ?;";
+            sqlite3_stmt* updateStmt;
+            sqlite3_prepare_v2(db, updateSql.c_str(), -1, &updateStmt, nullptr);
+            sqlite3_bind_double(updateStmt, 1, grade.getScore());
+            sqlite3_bind_text(updateStmt, 2, grade.getLetterGrade().c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(updateStmt, 3, grade.getStudentId().c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(updateStmt, 4, grade.getCourseId().c_str(), -1, SQLITE_STATIC);
+
+            if (sqlite3_step(updateStmt) != SQLITE_DONE) {
+                cerr << "\033[1;31mError updating grade: " << sqlite3_errmsg(db) << "\033[0m" << endl;
+            } else {
+                cout << "\033[1;32mGrade updated successfully.\033[0m" << endl;
+            }
+            sqlite3_finalize(updateStmt);
+        }
+        return;
+    }
+    sqlite3_finalize(gradeCheckStmt);
+
+    // Insert new grade
+    string sql = "INSERT INTO Grades (StudentID, CourseID, Score, Grade) VALUES (?, ?, ?, ?);";
     sqlite3_stmt* stmt;
     sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
     sqlite3_bind_text(stmt, 1, grade.getStudentId().c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_double(stmt, 2, grade.getScore());  // Bind the score
-    sqlite3_bind_text(stmt, 3, grade.getLetterGrade().c_str(), -1, SQLITE_STATIC);  // Bind the letter grade
+    sqlite3_bind_text(stmt, 2, grade.getCourseId().c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_double(stmt, 3, grade.getScore());
+    sqlite3_bind_text(stmt, 4, grade.getLetterGrade().c_str(), -1, SQLITE_STATIC);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
-        cerr << "Error adding grade: " << sqlite3_errmsg(db) << endl;
+        cerr << "\033[1;31mError adding grade: " << sqlite3_errmsg(db) << "\033[0m" << endl;
     } else {
-        cout << "Grade added successfully." << endl;
+        cout << "\033[1;32mGrade added successfully.\033[0m" << endl;
     }
 
     sqlite3_finalize(stmt);
@@ -202,7 +283,7 @@ void Database::displayAllStudents() {
               << "| " << setw(30) << "Name" << " |\033[0m" << endl;
     cout << "\033[1;33m+----------------------+--------------------------------+\033[0m" << endl;
 
-    
+
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         cout << "| "  <<"  "<<sqlite3_column_text(stmt, 0)
                     <<"                   "<< sqlite3_column_text(stmt, 1) << endl;
@@ -215,26 +296,213 @@ void Database::displayAllStudents() {
     cout << endl;  // Space after the table
 }
 void Database::displayAllGrades() {
-    string sql = "SELECT StudentID, Score, Grade FROM Grades;";
+    string sql = "SELECT s.Name, c.CourseName, g.Score, g.Grade "
+                 "FROM Grades g "
+                 "JOIN Students s ON g.StudentID = s.ID "
+                 "JOIN Courses c ON g.CourseID = c.CourseID "
+                 "ORDER BY s.Name, c.CourseName;";
     sqlite3_stmt* stmt;
     sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
-    // Display grades in a table format
-    cout << "\n--- Grades ---" << endl;
-    cout << "+----------------+-------+-------+" << endl;
-    cout << "| Student ID     | Score | Grade |" << endl;
-    cout << "+----------------+-------+-------+" << endl;
+    cout << "\n\033[1;33m+----------------------+----------------------+-------+-------+\033[0m" << endl;
+    cout << "\033[1;33m| Student Name         | Course Name         | Score | Grade |\033[0m" << endl;
+    cout << "\033[1;33m+----------------------+----------------------+-------+-------+\033[0m" << endl;
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        cout << "| " << setw(14) << sqlite3_column_text(stmt, 0) << " | "
-                  << setw(5) << sqlite3_column_double(stmt, 1) << " | "
-                  << setw(5) << sqlite3_column_text(stmt, 2) << " |" << endl;
+        cout << "| " << setw(20) << sqlite3_column_text(stmt, 0) << " | "
+             << setw(20) << sqlite3_column_text(stmt, 1) << " | "
+             << setw(5) << sqlite3_column_double(stmt, 2) << " | "
+             << setw(5) << sqlite3_column_text(stmt, 3) << " |" << endl;
     }
 
-    cout << "+----------------+-------+-------+" << endl;
+    cout << "\033[1;33m+----------------------+----------------------+-------+-------+\033[0m" << endl;
     sqlite3_finalize(stmt);
 }
 
+bool Database::courseExists(const string& courseId) {
+    string sql = "SELECT COUNT(*) FROM Courses WHERE CourseID = ?;";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, courseId.c_str(), -1, SQLITE_STATIC);
+    
+    bool exists = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        exists = sqlite3_column_int(stmt, 0) > 0;
+    }
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
+bool Database::addCourse(const string& courseId, const string& courseName) {
+    if (courseExists(courseId)) {
+        cerr << "\033[1;31mError: Course with ID " << courseId << " already exists.\033[0m" << endl;
+        return false;
+    }
+
+    string sql = "INSERT INTO Courses (CourseID, CourseName) VALUES (?, ?);";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, courseId.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, courseName.c_str(), -1, SQLITE_STATIC);
+
+    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return success;
+}
+
+bool Database::assignCourseToStudent(const string& studentId, const string& courseId) {
+    if (!studentExists(studentId)) {
+        cerr << "\033[1;31mError: Student does not exist.\033[0m" << endl;
+        return false;
+    }
+    if (!courseExists(courseId)) {
+        cerr << "\033[1;31mError: Course does not exist.\033[0m" << endl;
+        return false;
+    }
+
+    // Check if student already has this course
+    string checkDuplicateSql = "SELECT COUNT(*) FROM StudentCourses WHERE StudentID = ? AND CourseID = ?;";
+    sqlite3_stmt* dupStmt;
+    sqlite3_prepare_v2(db, checkDuplicateSql.c_str(), -1, &dupStmt, nullptr);
+    sqlite3_bind_text(dupStmt, 1, studentId.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(dupStmt, 2, courseId.c_str(), -1, SQLITE_STATIC);
+    
+    if (sqlite3_step(dupStmt) == SQLITE_ROW && sqlite3_column_int(dupStmt, 0) > 0) {
+        cerr << "\033[1;31mError: Student is already enrolled in this course.\033[0m" << endl;
+        sqlite3_finalize(dupStmt);
+        return false;
+    }
+    sqlite3_finalize(dupStmt);
+
+    // Check current course count
+    string countSql = "SELECT COUNT(*) FROM StudentCourses WHERE StudentID = ?;";
+    sqlite3_stmt* countStmt;
+    sqlite3_prepare_v2(db, countSql.c_str(), -1, &countStmt, nullptr);
+    sqlite3_bind_text(countStmt, 1, studentId.c_str(), -1, SQLITE_STATIC);
+    
+    int courseCount = 0;
+    if (sqlite3_step(countStmt) == SQLITE_ROW) {
+        courseCount = sqlite3_column_int(countStmt, 0);
+    }
+    sqlite3_finalize(countStmt);
+
+    // Check course limits
+    if (courseCount >= 5) {
+        cerr << "\033[1;31mError: Student has reached the maximum limit of 5 courses.\033[0m" << endl;
+        return false;
+    }
+
+    // Insert the new course
+    string sql = "INSERT INTO StudentCourses (StudentID, CourseID) VALUES (?, ?);";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, studentId.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, courseId.c_str(), -1, SQLITE_STATIC);
+
+    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+
+    if (success) {
+        // Check if student now has at least 4 courses
+        courseCount++;
+        if (courseCount >= 4) {
+            cout << "\033[1;32mStudent has met the minimum course requirement (4 courses).\033[0m" << endl;
+        } else {
+            cout << "\033[1;33mWarning: Student needs " << (4 - courseCount) 
+                 << " more course(s) to meet the minimum requirement of 4 courses.\033[0m" << endl;
+        }
+    }
+
+    return success;
+}
+
+void Database::displayAllCourses() {
+    string sql = "SELECT CourseID, CourseName FROM Courses;";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+
+    cout << "\n\033[1;33m+---------------+--------------------------------+\033[0m" << endl;
+    cout << "\033[1;33m| Course ID     | Course Name                     |\033[0m" << endl;
+    cout << "\033[1;33m+---------------+--------------------------------+\033[0m" << endl;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        cout << "| " << setw(13) << sqlite3_column_text(stmt, 0) 
+             << " | " << setw(30) << sqlite3_column_text(stmt, 1) << " |" << endl;
+    }
+
+    cout << "\033[1;33m+---------------+--------------------------------+\033[0m" << endl;
+    sqlite3_finalize(stmt);
+}
+
+void Database::displayStudentCourses(const string& studentId) {
+    string sql = "SELECT c.CourseID, c.CourseName FROM Courses c "
+                 "JOIN StudentCourses sc ON c.CourseID = sc.CourseID "
+                 "WHERE sc.StudentID = ?;";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, studentId.c_str(), -1, SQLITE_STATIC);
+
+    cout << "\n\033[1;36mCourses for Student ID " << studentId << ":\033[0m" << endl;
+    cout << "\033[1;33m+---------------+--------------------------------+\033[0m" << endl;
+    cout << "\033[1;33m| Course ID     | Course Name                     |\033[0m" << endl;
+    cout << "\033[1;33m+---------------+--------------------------------+\033[0m" << endl;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        cout << "| " << setw(13) << sqlite3_column_text(stmt, 0) 
+             << " | " << setw(30) << sqlite3_column_text(stmt, 1) << " |" << endl;
+    }
+
+    cout << "\033[1;33m+---------------+--------------------------------+\033[0m" << endl;
+    sqlite3_finalize(stmt);
+}
+
+void Database::displayStudentGrades(const string& studentId) {
+    // First check if student has any courses
+    string checkSql = "SELECT COUNT(*) FROM StudentCourses WHERE StudentID = ?";
+    sqlite3_stmt* checkStmt;
+    sqlite3_prepare_v2(db, checkSql.c_str(), -1, &checkStmt, nullptr);
+    sqlite3_bind_text(checkStmt, 1, studentId.c_str(), -1, SQLITE_STATIC);
+    
+    if (sqlite3_step(checkStmt) == SQLITE_ROW) {
+        int courseCount = sqlite3_column_int(checkStmt, 0);
+        if (courseCount == 0) {
+            cout << "\n\033[1;31mThis student has not enrolled in any courses yet.\033[0m" << endl;
+            sqlite3_finalize(checkStmt);
+            return;
+        }
+    }
+    sqlite3_finalize(checkStmt);
+
+    // Continue with existing grade display logic
+    string sql = "SELECT c.CourseName, g.Score, g.Grade "
+                 "FROM Grades g "
+                 "JOIN Courses c ON g.CourseID = c.CourseID "
+                 "WHERE g.StudentID = ?;";
+    sqlite3_stmt* stmt;
+    sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, studentId.c_str(), -1, SQLITE_STATIC);
+
+    cout << "\n\033[1;36mGrades for Student ID " << studentId << ":\033[0m" << endl;
+    cout << "\033[1;33m+----------------------+-------+-------+\033[0m" << endl;
+    cout << "\033[1;33m| Course Name         | Score | Grade |\033[0m" << endl;
+    cout << "\033[1;33m+----------------------+-------+-------+\033[0m" << endl;
+
+    bool hasGrades = false;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        hasGrades = true;
+        cout << "| " << setw(20) << sqlite3_column_text(stmt, 0) << " | "
+             << setw(5) << sqlite3_column_double(stmt, 1) << " | "
+             << setw(5) << sqlite3_column_text(stmt, 2) << " |" << endl;
+    }
+
+    if (!hasGrades) {
+        cout << "\n\033[1;33mThis student is enrolled in courses but has no grades yet.\033[0m" << endl;
+    } else {
+        cout << "\033[1;33m+----------------------+-------+-------+\033[0m" << endl;
+    }
+    
+    sqlite3_finalize(stmt);
+}
 
 
 

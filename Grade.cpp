@@ -1,14 +1,14 @@
 #include "Grade.h"
 using namespace std;
 
-Grade::Grade(const string &studentId, double score)
-    : studentId(studentId), score(score) {
-    calculateLetterGrade(); // Automatically calculate the letter grade based on score
+Grade::Grade(const string &studentId, const string &courseId, double score)
+    : studentId(studentId), courseId(courseId), score(score) {
+    calculateLetterGrade();
 }
 
 void Grade::setScore(double newScore) {
     score = newScore;
-    calculateLetterGrade(); // Update letter grade based on new score
+    calculateLetterGrade();
 }
 
 double Grade::getScore() const {
@@ -23,6 +23,10 @@ string Grade::getStudentId() const {
     return studentId;
 }
 
+string Grade::getCourseId() const {
+    return courseId;
+}
+
 void Grade::calculateLetterGrade() {
     if (score >= 90) {
         letterGrade = "A";
@@ -35,4 +39,10 @@ void Grade::calculateLetterGrade() {
     } else {
         letterGrade = "F";
     }
+}
+
+Grade::Grade(const std::string& studentId, double score) {
+    this->studentId = studentId;
+    this->score = score;
+    calculateLetterGrade();
 }

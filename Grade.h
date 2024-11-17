@@ -6,18 +6,19 @@
 class Grade {
 private:
     std::string studentId;
+    std::string courseId;
     double score;
     std::string letterGrade;
 
-    void calculateLetterGrade(); // Function to calculate letter grade from score
+    void calculateLetterGrade();
 
 public:
-    Grade(const std::string &studentId, double score);
+    Grade(const std::string &studentId, const std::string &courseId, double score);
+    Grade(const std::string &studentId, double score);  // Changed from string to std::string
     void setScore(double score);
     double getScore() const;
     std::string getLetterGrade() const;
     std::string getStudentId() const;
-    void displayGrade() const;
+    std::string getCourseId() const;
 };
-
 #endif

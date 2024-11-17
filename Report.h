@@ -3,10 +3,16 @@
 
 #include "Student.h"
 #include "Grade.h"
+#include "Database.h"
+#include <vector>
+#include <string>
 
 class Report {
 public:
-    void generateReport(const Student &student, const Grade &grade) const;
+    void generateReport(const std::string& studentId, Database& db) const;
+private:
+    double calculateOverallGrade(const std::string& studentId, Database& db) const;
+    std::string calculateLetterGrade(double score) const;
 };
 
 #endif
